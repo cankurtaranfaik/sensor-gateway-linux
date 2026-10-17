@@ -1,0 +1,2 @@
+source "$BR2_EXTERNAL_SENSGW_PATH/package/vimu/Config.in"
+source "$BR2_EXTERNAL_SENSGW_PATH/package/telemd/Config.in"

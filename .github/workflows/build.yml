@@ -1,0 +1,71 @@
+name: build-and-measure
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+env:
+  BR_BRANCH: 2025.02.x
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential file wget cpio unzip rsync bc libssl-dev \
+            device-tree-compiler qemu-system-arm python3-matplotlib
+
+      - name: Fetch Buildroot ${{ env.BR_BRANCH }}
+        run: |
+          git clone --depth 1 -b "$BR_BRANCH" \
+            https://gitlab.com/buildroot.org/buildroot.git buildroot
+          git -C buildroot log -1 --format='buildroot %h %cd' --date=short
+
+      - name: Download and ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildroot-dl
+            ~/.buildroot-ccache
+          key: br-${{ env.BR_BRANCH }}-${{ hashFiles('configs/**', 'board/**', 'package/**') }}
+          restore-keys: br-${{ env.BR_BRANCH }}-
+
+      - name: Configure
+        run: sh scripts/configure.sh buildroot output
+
+      - name: Build
+        run: make -C buildroot O="$PWD/output"
+
+      - name: Device tree with vimu node
+        run: sh scripts/make_dtb.sh output/images
+
+      - name: Boot in QEMU and measure
+        run: sh scripts/run_and_measure.sh output/images results 30
+
+      - name: Summary
+        if: always()
+        run: |
+          [ -f results/results.md ] && cat results/results.md >> "$GITHUB_STEP_SUMMARY"
+          [ -f results/serial.log ] && tail -n 40 results/serial.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results
+          path: results/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: images
+          path: |
+            output/images/Image
+            output/images/rootfs.ext4
+            output/images/vimu.dtb

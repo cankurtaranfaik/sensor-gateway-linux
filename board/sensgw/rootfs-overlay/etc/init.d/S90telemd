@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# Load the vimu driver and start telemd.
+#
+
+DAEMON=/usr/bin/telemd
+PIDFILE=/var/run/telemd.pid
+LOGFILE=/var/log/telemd.log
+TELEMD_ARGS="-d 10.0.2.2 -p 5005"
+
+# shellcheck source=/dev/null
+[ -r /etc/default/telemd ] && . /etc/default/telemd
+
+start() {
+	printf 'Starting telemd: '
+	if ! modprobe vimu; then
+		echo "FAIL (modprobe vimu)"
+		return 1
+	fi
+	echo "sensgw: init reached S90 at $(cut -d' ' -f1 /proc/uptime)s" > /dev/kmsg
+	# shellcheck disable=SC2086
+	start-stop-daemon -S -q -b -m -p "$PIDFILE" -x /bin/sh -- \
+		-c "exec $DAEMON $TELEMD_ARGS 2>>$LOGFILE"
+	[ $? = 0 ] && echo "OK" || echo "FAIL"
+}
+
+stop() {
+	printf 'Stopping telemd: '
+	start-stop-daemon -K -q -p "$PIDFILE"
+	[ $? = 0 ] && echo "OK" || echo "FAIL"
+	rm -f "$PIDFILE"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart|reload) stop; start ;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+		;;
+esac

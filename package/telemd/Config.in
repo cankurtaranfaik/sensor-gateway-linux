@@ -1,0 +1,5 @@
+config BR2_PACKAGE_TELEMD
+	bool "telemd"
+	help
+	  Reads samples from /dev/vimu and streams them as UDP
+	  telemetry frames. Started at boot by /etc/init.d/S90telemd.

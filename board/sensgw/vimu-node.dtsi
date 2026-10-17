@@ -1,0 +1,10 @@
+/*
+ * Added to the device tree that QEMU generates for the "virt" machine.
+ * scripts/make_dtb.sh dumps the stock tree, includes it and appends this node.
+ */
+/ {
+	vimu {
+		compatible = "sensgw,vimu";
+		sample-rate-hz = <100>;
+	};
+};

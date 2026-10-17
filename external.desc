@@ -1,0 +1,2 @@
+name: SENSGW
+desc: Small embedded Linux sensor gateway streaming IMU data over UDP
