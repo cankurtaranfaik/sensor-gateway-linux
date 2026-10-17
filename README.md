@@ -73,9 +73,33 @@ cat /var/log/telemd.log
 
 ## Results
 
-See the latest run in the Actions tab. Numbers come from QEMU without KVM, so
-they say more about the emulator than about real hardware. They are there to
-catch regressions between commits.
+From [run 39027156837](https://github.com/cankurtaranfaik/sensor-gateway-linux/actions/runs/39027156837),
+Linux 6.12.27 on QEMU virt, one Cortex-A53, 256 MiB, 30 s capture:
+
+| | |
+|---|---|
+| kernel hands over to /sbin/init | 0.53 s |
+| init reaches S90telemd | 2.64 s |
+| vimu probed | 2.68 s |
+| first frame sent | 2.80 s |
+| QEMU launch to first frame on the host | 2.94 s |
+| kernel Image / rootfs content | 12.5 MiB / 7.9 MiB |
+| vimu.ko / telemd | 13.9 KiB / 9.8 KiB |
+| frames received | 3002 (100.0 Hz) |
+| lost / bad frames | 0 / 0 |
+| sample interval mean / stdev | 10.000 ms / 16 us |
+| sample interval min / max | 9.86 ms / 10.15 ms |
+| driver to socket p50 / p99 / max | 91 / 157 / 511 us |
+
+![telemetry](docs/img/telemetry.png)
+![latency](docs/img/latency.png)
+
+These numbers come from QEMU without KVM, so they say more about the emulator
+than about real hardware. They are there to catch regressions between
+commits. Every run's full report is attached to the workflow as an artifact.
+
+A longer write-up (Turkish) is on the
+[project page](https://cankurtaranfaik.github.io/sensor-gateway-linux/).
 
 ## License
 

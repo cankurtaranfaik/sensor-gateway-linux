@@ -1,0 +1,10 @@
+title: sensor-gateway-linux
+description: Embedded Linux notları - Faik Cankurtaran
+theme: minima
+lang: tr
+author:
+  name: Faik Cankurtaran
+minima:
+  social_links:
+    - { platform: github, user_url: "https://github.com/cankurtaranfaik" }
+    - { platform: linkedin, user_url: "https://www.linkedin.com/in/faik-cankurtaran-442014215" }
