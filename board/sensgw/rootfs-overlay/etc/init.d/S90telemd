@@ -12,12 +12,12 @@ TELEMD_ARGS="-d 10.0.2.2 -p 5005"
 [ -r /etc/default/telemd ] && . /etc/default/telemd
 
 start() {
+	echo "sensgw: init reached S90 at $(cut -d' ' -f1 /proc/uptime)s" > /dev/kmsg
 	printf 'Starting telemd: '
 	if ! modprobe vimu; then
 		echo "FAIL (modprobe vimu)"
 		return 1
 	fi
-	echo "sensgw: init reached S90 at $(cut -d' ' -f1 /proc/uptime)s" > /dev/kmsg
 	# shellcheck disable=SC2086
 	start-stop-daemon -S -q -b -m -p "$PIDFILE" -x /bin/sh -- \
 		-c "exec $DAEMON $TELEMD_ARGS 2>>$LOGFILE"

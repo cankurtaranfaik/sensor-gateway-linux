@@ -13,8 +13,8 @@ from pathlib import Path
 LINE = re.compile(r"^\[\s*(\d+\.\d+)\]\s(.*)$")
 MARKERS = {
     "kernel_init_s": "Run /sbin/init",
-    "driver_probe_s": "virtual IMU ready",
     "init_s90_s": "sensgw: init reached S90",
+    "driver_probe_s": "virtual IMU ready",
     "first_frame_s": "telemd: first frame sent",
 }
 
@@ -152,8 +152,8 @@ def main():
         "| Boot (kernel timestamps) | |",
         "|---|---|",
         f"| kernel hands over to /sbin/init | {fmt(boot.get('kernel_init_s'), ' s')} |",
-        f"| vimu driver probed | {fmt(boot.get('driver_probe_s'), ' s')} |",
         f"| init reaches S90telemd | {fmt(boot.get('init_s90_s'), ' s')} |",
+        f"| vimu driver probed (modprobe) | {fmt(boot.get('driver_probe_s'), ' s')} |",
         f"| first telemetry frame sent | {fmt(boot.get('first_frame_s'), ' s')} |",
         f"| QEMU launch to first frame on host (wall clock) | {fmt(wall, ' s')} |",
         "",
