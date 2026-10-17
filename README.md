@@ -98,7 +98,7 @@ These numbers come from QEMU without KVM, so they say more about the emulator
 than about real hardware. They are there to catch regressions between
 commits. Every run's full report is attached to the workflow as an artifact.
 
-A longer write-up (Turkish) is on the
+A longer write-up is on the
 [project page](https://cankurtaranfaik.github.io/sensor-gateway-linux/).
 
 ## License

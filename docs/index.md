@@ -1,29 +1,27 @@
 ---
 layout: post
-title: "Kartsız Embedded Linux: Buildroot, kendi sürücüm ve QEMU'da ölçüm"
+title: "Embedded Linux without a board: Buildroot, a custom driver and measurements in QEMU"
 date: 2026-10-17
 ---
 
-Uzun süredir mikrodenetleyici tarafında çalışıyorum: bare-metal, FreeRTOS, kesmeler, DMA. Linux tarafında ise genelde hazır bir imajın üstüne uygulama yazan taraftaydım. Bu sefer işin alt katmanını kendim kurmak istedim: imajı sıfırdan derlemek, bir sensör için kernel sürücüsü yazmak, veriyi bir servisle dışarı akıtmak ve bunların hepsini her commit'te otomatik test etmek.
+sensor-gateway-linux is a small embedded Linux image for ARM64. It reads an IMU through a kernel driver and streams the samples over UDP, like a box next to a motor or a pump that sends vibration data to a server. Everything runs in QEMU, and every commit is built, booted and measured automatically.
 
-Elimde kart olmadığı için her şeyi QEMU üzerinde yaptım. Senaryo basit: bir motorun ya da pompanın yanına vidalanmış, titreşim verisini sunucuya gönderen küçük bir Linux kutusu.
+Code: [github.com/cankurtaranfaik/sensor-gateway-linux](https://github.com/cankurtaranfaik/sensor-gateway-linux)
 
-Kod: [github.com/cankurtaranfaik/sensor-gateway-linux](https://github.com/cankurtaranfaik/sensor-gateway-linux)
+![Architecture](img/architecture.png)
 
-![Mimari](img/architecture.png)
+## The parts
 
-## Parçalar
+**Image.** A `BR2_EXTERNAL` tree on top of Buildroot's `qemu_aarch64_virt_defconfig`. Instead of copying the defconfig, a small fragment is appended to it, so the stock settings stay current when the Buildroot version changes. The prebuilt Bootlin toolchain keeps the build time down.
 
-**İmaj.** Buildroot'un `qemu_aarch64_virt_defconfig` ayarının üstüne kendi `BR2_EXTERNAL` ağacımı koydum. Defconfig'i kopyalamak yerine küçük bir fragment ekliyorum, böylece Buildroot sürümü değişince stok ayarlar kendiliğinden güncel kalıyor. Derleme süresini kısaltmak için Bootlin'in hazır toolchain'ini kullandım.
+**Driver (`vimu.ko`).** The sensor is simulated, but the driver follows the same path a real SPI or I2C IMU driver would:
 
-**Sürücü (`vimu.ko`).** Sensör gerçek değil ama sürücünün yaptığı her şey gerçek bir SPI/I2C IMU sürücüsünün izleyeceği yol:
+- it binds to the `sensgw,vimu` device tree node and reads the sample rate from `sample-rate-hz`,
+- an `hrtimer` produces samples and pushes them into a `kfifo`,
+- `/dev/vimu` offers blocking `read()` and `poll()`,
+- if the reader falls behind, the oldest sample is dropped and counted in the sysfs `dropped` attribute.
 
-- device tree'deki `sensgw,vimu` düğümüne bağlanıyor, örnekleme hızını `sample-rate-hz` özelliğinden okuyor,
-- bir `hrtimer` ile örnek üretip `kfifo`'ya yazıyor,
-- `/dev/vimu` üzerinden bloklayan `read()` ve `poll()` veriyor,
-- okuyan taraf yetişemezse en eski örneği atıp sysfs'teki `dropped` sayacını artırıyor.
-
-Zamanlayıcı kısmı şöyle:
+The timer callback:
 
 ```c
 static enum hrtimer_restart vimu_tick(struct hrtimer *t)
@@ -49,46 +47,35 @@ static enum hrtimer_restart vimu_tick(struct hrtimer *t)
 }
 ```
 
-Timer yalnızca cihaz açıkken çalışıyor; kimse okumuyorsa CPU boşuna uyanmıyor.
+The timer only runs while the device is open, so nothing wakes the CPU when no one is reading.
 
-**Device tree.** QEMU'nun `virt` makinesi device tree'yi kendisi üretiyor, yani düzenleyebileceğim bir `.dts` dosyası yok. Çözüm: QEMU'ya `dumpdtb` ile ağacı döktürüp, onu `/include/` eden küçük bir dosyaya kendi düğümümü ekleyip `dtc` ile yeniden derlemek. Burada dikkat edilmesi gereken nokta, döküm ile asıl boot'un aynı makine ayarlarıyla yapılması; bellek ya da CPU sayısı farklı olursa ağaç makineyle uyuşmuyor.
+**Device tree.** QEMU's `virt` machine generates its device tree at runtime, so there is no `.dts` file to edit. The build asks QEMU to dump the tree with `dumpdtb`, includes it from a small wrapper that adds the vimu node and compiles the result with `dtc`. The dump and the real boot must use the same machine options. If memory size or CPU count differ, the tree no longer matches the machine.
 
-**Servis (`telemd`).** Sürücüden 16'lık gruplar halinde okuyup her örneği 38 baytlık bir pakete koyuyor: sıra numarası, iki zaman damgası, altı eksen verisi ve CRC-16. Zaman damgalarından biri örneğin alındığı an, diğeri `sendto()`'dan hemen önceki an. Aradaki fark, bir örneğin sürücüden sokete kadar ne kadar beklediğini gösteriyor. Servis BusyBox init betiğiyle açılışta başlıyor.
+**Service (`telemd`).** It reads the driver in batches of 16 and puts each sample into a 38-byte frame: sequence number, two timestamps, six axes and a CRC-16. One timestamp is taken when the sample is produced, the other right before `sendto()`. The difference shows how long a sample waits between the driver and the socket. A BusyBox init script loads the driver and starts the service at boot.
 
-**CI.** Her push'ta GitHub Actions imajı derliyor, QEMU'da açıyor, bilgisayar tarafında 30 saniye veri dinliyor ve sonuçları raporluyor. Sürücüde ya da serviste bir şey bozulursa paket kaybı ya da boot süresi hemen gösteriyor.
+**CI.** On every push, GitHub Actions builds the image, boots it in QEMU, listens on the host for 30 seconds and writes a report. If a change breaks the driver or the service, it shows up as lost frames or a longer boot.
 
-## Sonuçlar
+## Results
 
-CI'daki son çalıştırmadan ([run 39027156837](https://github.com/cankurtaranfaik/sensor-gateway-linux/actions/runs/39027156837)), Linux 6.12.27, tek çekirdek Cortex-A53, 256 MiB RAM:
+From CI [run 39027156837](https://github.com/cankurtaranfaik/sensor-gateway-linux/actions/runs/39027156837), Linux 6.12.27, one Cortex-A53, 256 MiB RAM:
 
-| Ölçüm | Değer |
+| Measurement | Value |
 |---|---|
-| Kernel'in /sbin/init'e geçmesi | 0,53 s |
-| init'in S90telemd'ye gelmesi | 2,64 s |
-| vimu sürücüsünün yüklenmesi | 2,68 s |
-| İlk paketin gönderilmesi | 2,80 s |
-| QEMU'nun başlatılmasından ilk paketin bilgisayara ulaşmasına | 2,94 s |
-| Kernel Image / rootfs içeriği | 12,5 MiB / 7,9 MiB |
-| vimu.ko / telemd | 13,9 KiB / 9,8 KiB |
-| 30 saniyede gelen paket | 3002 (100,0 Hz) |
-| Kayıp / bozuk paket | 0 / 0 |
-| Örnekler arası süre, ortalama / standart sapma | 10,000 ms / 16 µs |
-| Örnekler arası süre, en kısa / en uzun | 9,86 ms / 10,15 ms |
-| Sürücüden sokete gecikme, p50 / p99 / en kötü | 91 / 157 / 511 µs |
+| Kernel hands over to /sbin/init | 0.53 s |
+| init reaches S90telemd | 2.64 s |
+| vimu driver probed | 2.68 s |
+| First frame sent | 2.80 s |
+| QEMU launch to first frame on the host | 2.94 s |
+| Kernel Image / rootfs content | 12.5 MiB / 7.9 MiB |
+| vimu.ko / telemd | 13.9 KiB / 9.8 KiB |
+| Frames received in 30 s | 3002 (100.0 Hz) |
+| Lost / bad frames | 0 / 0 |
+| Sample interval, mean / stdev | 10.000 ms / 16 µs |
+| Sample interval, min / max | 9.86 ms / 10.15 ms |
+| Driver to socket latency, p50 / p99 / max | 91 / 157 / 511 µs |
 
-Kernel yarım saniyede init'e geçiyor ama init'in S90'a gelmesi iki saniyeden fazla sürüyor. Bu sürenin nereye gittiğini bir sonraki adımda ölçeceğim.
+![Data received on the host](img/telemetry.png)
 
-![Bilgisayara gelen veri](img/telemetry.png)
+![Driver to socket latency](img/latency.png)
 
-![Sürücüden sokete gecikme](img/latency.png)
-
-Bu sayıları okurken bir şeyi unutmamak lazım: QEMU burada KVM olmadan, ARM komutlarını yazılımla çevirerek çalışıyor. Yani mutlak değerler gerçek bir Cortex-A53 kartını temsil etmiyor. İşe yaradıkları yer commit'ler arası karşılaştırma: bir değişiklik gecikmeyi ya da boot süresini bozarsa CI bunu yakalıyor.
-
-## Sırada ne var
-
-- Gerçek bir sensör için IIO sürücüsü (I2C, QEMU'da emüle edilen bir cihazla)
-- A/B bölümlü, geri dönebilen OTA güncelleme
-- Boot süresini kısaltma: hangi adım ne kadar sürüyor, neyi atabilirim
-- Aynı ölçümü PREEMPT_RT kernel ile tekrarlayıp gecikme dağılımını karşılaştırmak
-
-Her adımı ayrı bir yazı olarak buraya ekleyeceğim.
+QEMU runs here without KVM and translates every ARM instruction in software, so the absolute values do not describe a real Cortex-A53 board. They are useful for comparing commits: if a change makes latency or boot time worse, CI catches it.
